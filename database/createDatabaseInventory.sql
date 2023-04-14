@@ -1,3 +1,10 @@
+DROP VIEW All_quantity;
+DROP VIEW in_store;
+DROP VIEW in_transit;
+DROP VIEW in_warehouse;
+DROP VIEW location_quantity;
+
+
 DROP DATABASE IF EXISTS `Inventory`;
 CREATE DATABASE `Inventory`;
 USE `Inventory`;
@@ -29,32 +36,9 @@ CREATE TABLE Product(
 	company_name CHAR(30) NOT NULL
 );
 
-CREATE TABLE Supplies(
-	product_code INTEGER NOT NULL,
-	location_id  INTEGER NOT NULL,
-	quantity INTEGER,
--- 	PRIMARY KEY(product_code, location_id)
-    CONSTRAINT PK_Supplies PRIMARY KEY (product_code, location_id)
-);
-
-CREATE TABLE Houses (
-	product_code INTEGER NOT NULL,
-	location_id  INTEGER NOT NULL,
-	quantity INTEGER,
-	PRIMARY KEY (product_code, location_id)
-);
-
-CREATE TABLE Has(
-	product_code INTEGER NOT NULL,
-	package_id  INTEGER NOT NULL,
-	quantity INTEGER,
-	PRIMARY KEY(product_code, package_id)
-);
-
 CREATE TABLE Location_R1(
 	address CHAR(100) PRIMARY KEY,
 	area_code INTEGER
-	
 );
 
 CREATE TABLE Location_R3(
@@ -88,14 +72,15 @@ CREATE TABLE Store(
 	location_id INTEGER PRIMARY KEY,
 	opening_hours_start TIME,
 	opening_hours_end TIME,
-	FOREIGN KEY (location_id) REFERENCES Location_R4 (location_id)
+	FOREIGN KEY (location_id) REFERENCES Location_R4 (location_id) ON DELETE CASCADE ON UPDATE CASCADE 
 );
 
 
 CREATE TABLE Warehouse(
 	location_id INTEGER PRIMARY KEY,
 	num_loading_docks INTEGER,
-	FOREIGN KEY (location_id) REFERENCES Location_R4 (location_id)
+	FOREIGN KEY (location_id) REFERENCES Location_R4 (location_id) ON DELETE CASCADE ON UPDATE CASCADE 
+	
 );
 
 CREATE TABLE Vehicle_type(
@@ -107,7 +92,7 @@ CREATE TABLE Transportation(
 	license_plate CHAR(7),
 	type_name CHAR(30),
 	PRIMARY KEY (license_plate),
-	FOREIGN KEY (type_name) REFERENCES Vehicle_type (type_name) ON DELETE SET NULL
+	FOREIGN KEY (type_name) REFERENCES Vehicle_type (type_name) ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 CREATE TABLE Package(
@@ -115,33 +100,53 @@ CREATE TABLE Package(
 	destination INTEGER NOT NULL,
 	location_id INTEGER,
 	license_plate CHAR(7), 
-	FOREIGN KEY (location_id) REFERENCES Location_R4 (location_id),
-	FOREIGN KEY (license_plate) REFERENCES Transportation (license_plate)
+	FOREIGN KEY (location_id) REFERENCES Location_R4 (location_id) ON DELETE SET NULL ON UPDATE CASCADE,
+	FOREIGN KEY (license_plate) REFERENCES Transportation (license_plate) ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+CREATE TABLE Supplies(
+	product_code INTEGER NOT NULL,
+	location_id  INTEGER NOT NULL,
+	quantity INTEGER,
+-- 	PRIMARY KEY(product_code, location_id)
+    CONSTRAINT PK_Supplies PRIMARY KEY (product_code, location_id),
+	FOREIGN KEY (product_code) REFERENCES Product (product_code) ON DELETE CASCADE ON UPDATE CASCADE,
+	FOREIGN KEY (location_id) REFERENCES Store (location_id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE Houses (
+	product_code INTEGER NOT NULL,
+	location_id  INTEGER NOT NULL,
+	quantity INTEGER,
+	PRIMARY KEY (product_code, location_id),
+	FOREIGN KEY (product_code) REFERENCES Product (product_code) ON DELETE CASCADE ON UPDATE CASCADE,
+	FOREIGN KEY (location_id) REFERENCES Warehouse (location_id) ON DELETE CASCADE ON UPDATE CASCADE
+
+);
+
+CREATE TABLE Has(
+	product_code INTEGER NOT NULL,
+	package_id  INTEGER NOT NULL,
+	quantity INTEGER,
+	PRIMARY KEY(product_code, package_id),
+	FOREIGN KEY (product_code) REFERENCES Product (product_code) ON DELETE CASCADE ON UPDATE CASCADE,
+	FOREIGN KEY (package_id) REFERENCES Package (package_id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE Accesses (
 	type_name CHAR(30),
 	location_id INTEGER,
 	PRIMARY KEY (type_name, location_id),
-	FOREIGN KEY (location_id) REFERENCES Location_R4 (location_id)
+	FOREIGN KEY (location_id) REFERENCES Location_R4 (location_id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE Internal_Fleet (
-	license_plate CHAR(6),
+	license_plate CHAR(7),
 	status CHAR(16),
 	company_name CHAR(30),
 	PRIMARY KEY (license_plate),
-	FOREIGN KEY(company_name) REFERENCES Company (company_name),
-	FOREIGN KEY(license_plate) REFERENCES Transportation (license_plate)
-);
-
-CREATE TABLE External_Fleet (
-	license_plate CHAR(6),
-	contract_id INT,
-	company_name CHAR(30),
-	PRIMARY KEY (license_plate),
-	FOREIGN KEY(company_name) REFERENCES Company (company_name),
-	FOREIGN KEY(license_plate) REFERENCES Transportation (license_plate)
+	FOREIGN KEY(company_name) REFERENCES Company (company_name) ON DELETE SET NULL ON UPDATE CASCADE,
+	FOREIGN KEY(license_plate) REFERENCES Transportation (license_plate) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE External_Company(
@@ -151,13 +156,46 @@ CREATE TABLE External_Company(
 	PRIMARY KEY (company_name)
 );
 
+CREATE TABLE External_Fleet (
+	license_plate CHAR(7),
+	contract_id INT,
+	company_name CHAR(30),
+	PRIMARY KEY (license_plate),
+	FOREIGN KEY(company_name) REFERENCES External_Company (company_name) ON DELETE SET NULL ON UPDATE CASCADE,
+	FOREIGN KEY(license_plate) REFERENCES Transportation (license_plate) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+
 CREATE TABLE Travels_to (
-	license_plate CHAR(6),
+	license_plate CHAR(7),
 	location_id INT,
 	departure_DATE  DATE,
 	arrival_DATE DATE,
-	PRIMARY KEY (license_plate,location_id)
+	PRIMARY KEY (license_plate,location_id) 
 );
+
+-- get all each location's product quantity
+CREATE VIEW Location_quantity AS
+    SELECT Hs.location_id, Hs.product_code, Hs.quantity as quantity FROM Houses Hs
+    UNION 
+    (SELECT S.location_id, S.product_code, S.quantity as quantity FROM Supplies S
+    UNION
+    SELECT  H.package_id, H.product_code, H.quantity as quantity FROM Has H);
+
+-- get each product quantity in the system
+CREATE VIEW All_quantity(product_code, product_quantity) AS 
+	SELECT product_code, SUM(quantity) FROM Location_quantity L GROUP BY L.product_code;
+
+
+-- get the product quantity of each type of location
+CREATE VIEW in_warehouse AS 
+SELECT product_code, IFNULL(SUM(quantity), 0) AS quantity FROM Location_quantity LQ WHERE EXISTS (SELECT * FROM Houses Hs WHERE Hs.location_id = LQ.location_id) GROUP BY product_code;
+CREATE VIEW in_store AS 
+SELECT product_code, IFNULL(SUM(quantity), 0) AS quantity FROM Location_quantity LQ WHERE EXISTS (SELECT * FROM Supplies S WHERE S.location_id = LQ.location_id) GROUP BY product_code;
+CREATE VIEW in_transit AS 
+SELECT product_code, IFNULL(SUM(quantity), 0) AS quantity FROM Location_quantity LQ WHERE EXISTS (SELECT * FROM Package P WHERE P.package_id = LQ.location_id) GROUP BY product_code;
+
+
 
 
 -- Insert data 
@@ -172,43 +210,10 @@ VALUES (4, 'Canned Tomatoes', 'Canton Canning Company');
 INSERT INTO Product
 VALUES (5, 'Eraser', 'Resare Limited');
 
-INSERT INTO Supplies
-VALUES (1, 103, 12);
-INSERT INTO Supplies
-VALUES (1, 104, 16);
-INSERT INTO Supplies
-VALUES (3, 104, 8);
-INSERT INTO Supplies
-VALUES (2, 103, 2);
-INSERT INTO Supplies
-VALUES (4, 105, 12);
-
-INSERT INTO Houses
-VALUES (1, 226, 50);
-INSERT INTO Houses
-VALUES (2, 226, 64);
-INSERT INTO Houses
-VALUES (1, 223, 81);
-INSERT INTO Houses
-VALUES (2, 213, 100);
-INSERT INTO Houses
-VALUES (1, 215, 10);
-
-INSERT INTO Has
-VALUES (1, 1101, 20);
-INSERT INTO Has
-VALUES (2, 1101, 12);
-INSERT INTO Has
-VALUES (1, 1102, 10);
-INSERT INTO Has
-VALUES (3, 1103, 20);
-INSERT INTO Has
-VALUES (1, 1103, 10);
-
 INSERT INTO Location_R1
 VALUES ('10800 170 Street, Surrey, BC', 604);
 INSERT INTO Location_R1
-VALUES ('57098 E Bakerview Road',  360);
+VALUES ('57098 E Bakerview Road, Bellingham, WA',  360);
 INSERT INTO Location_R1
 VALUES ('6400 Macdonald Street, Vancouver, BC', 604);
 INSERT INTO Location_R1
@@ -336,3 +341,107 @@ VALUES (1104, 101, NULL, 'CDE 789');
 INSERT INTO Package
 VALUES (1105, 213, NULL, 'BCD 259');
 
+INSERT INTO Supplies
+VALUES (1, 101, 20);
+INSERT INTO Supplies 
+VALUES (1, 102, 20);
+INSERT INTO Supplies
+VALUES (1, 103, 12);
+INSERT INTO Supplies
+VALUES (2, 103, 2);
+INSERT INTO Supplies 
+VALUES (3, 103, 10);
+INSERT INTO Supplies 
+VALUES (4, 103, 15);
+INSERT INTO Supplies
+VALUES (1, 104, 16);
+INSERT INTO Supplies
+VALUES (3, 104, 8);
+INSERT INTO Supplies
+VALUES (4, 104, 15);
+INSERT INTO Supplies
+VALUES (4, 105, 12);
+INSERT INTO Supplies 
+VALUES (5, 105, 5);
+
+INSERT INTO Houses
+VALUES (1, 226, 50);
+INSERT INTO Houses
+VALUES (2, 226, 64);
+INSERT INTO Houses
+VALUES (1, 223, 81);
+INSERT INTO Houses
+VALUES (2, 213, 100);
+INSERT INTO Houses
+VALUES (1, 215, 10);
+
+INSERT INTO Has
+VALUES (1, 1101, 20);
+INSERT INTO Has
+VALUES (2, 1101, 12);
+INSERT INTO Has
+VALUES (1, 1102, 10);
+INSERT INTO Has
+VALUES (3, 1103, 20);
+INSERT INTO Has
+VALUES (1, 1103, 10);
+
+
+INSERT INTO Internal_Fleet
+VALUES ('ABC 148', 'delivery', 'AAA North America');
+INSERT INTO Internal_Fleet
+VALUES ('CDE 789', 'delivery', 'AAA North America');
+INSERT INTO Internal_Fleet
+VALUES ('DEF 232', 'maintenance', 'AAA North America');
+INSERT INTO Internal_Fleet
+VALUES ('FGH 124', 'maintenance', 'AAA North America');
+INSERT INTO Internal_Fleet
+VALUES ('GHI 616', 'standby', 'AAA North America');
+
+INSERT INTO External_Company
+VALUES ('FedUp', '6044440044', '2018-08-11');
+INSERT INTO External_Company
+VALUES ('LHD', '6045550055', '2018-08-19');
+INSERT INTO External_Company
+VALUES ('YYY Logistics', '6047770077', '2013-01-19');
+INSERT INTO External_Company
+VALUES ('RSE Global Transport', '6042220022', '2014-02-10');
+INSERT INTO External_Company
+VALUES ('Global Leap', '6041110011', '2020-02-29');
+
+INSERT INTO External_Fleet
+VALUES ('BCD 259', 000000, 'YYY Logistics');
+INSERT INTO External_Fleet
+VALUES ('EFG 343', 000001, 'YYY Logistics');
+INSERT INTO External_Fleet
+VALUES ('HIJ 120', 000002, 'YYY Logistics');
+INSERT INTO External_Fleet
+VALUES('IJK 987', 000002, 'RSE Global Transport');
+INSERT INTO External_Fleet
+VALUES('JKL 676', 000003, 'LHD');
+
+INSERT INTO Accesses
+VALUES ('box_truck', 101);
+INSERT INTO Accesses
+VALUES ('18_wheel', 101);
+INSERT INTO Accesses
+VALUES ('box_truck', 102);
+INSERT INTO Accesses
+VALUES ('box_truck', 103);
+INSERT INTO Accesses
+VALUES ('box_truck', 104);
+INSERT INTO Accesses
+VALUES ('box_truck', 105);
+INSERT INTO Accesses
+VALUES ('18_wheel', 105);
+
+INSERT INTO Travels_to
+VALUES ('ABC 148', 103, '2023-02-20 12:00:00', '2023-06-20 12:00:00');
+INSERT INTO Travels_to
+VALUES ('CDE 789', 101, '2023-02-20 12:00:00', '2023-06-20 12:00:00');
+INSERT INTO Travels_to
+VALUES ('GHI 616', 103, '2023-06-20 12:00:00', '2023-06-22 12:00:00');
+INSERT INTO Travels_to
+VALUES ('BCD 259', 213, '2023-02-24 12:00:00', '2023-05-20 12:00:00');
+INSERT INTO Travels_to
+VALUES('IJK 987', 215, '2023-05-10 12:00:00', '2023-05-12 12:00:00');
