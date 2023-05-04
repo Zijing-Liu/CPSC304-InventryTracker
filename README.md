@@ -7,3 +7,6 @@ Data on goods can be managed and viewed with ease thanks to the system's user in
 Real-time updates on package and inventory progress will also be provided by the system. Users will thus have access to the most recent data regarding the location and status of packages, the number of items in stock, and other relevant information. 
 
 Overall, this inventory monitoring system will give a strong tool for managing inventory and following packages through the internal distribution network.
+
+## ER diagram
+![milestone2_1](https://user-images.githubusercontent.com/54514768/236090532-89d7315e-f079-45d2-ba60-0054f7854209.jpeg)
