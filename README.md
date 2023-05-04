@@ -1,1 +1,2 @@
-# project_t3l0m_t3z6w_u0c4h
+# Inventry Tracking System
+A Database Management System designed for retial industries to track inventory and logistics. 
